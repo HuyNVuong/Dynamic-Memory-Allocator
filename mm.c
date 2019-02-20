@@ -36,15 +36,15 @@
 /* Team structure */
 team_t team = {
 	/* Team name */
-	"Still a team",
+	" 10% bonus TO-GO",
 	/* note that we will add a 10% bonus for
 	* working alone */
 	/* the maximum number of members per team
 	 * is four */
 	/* First member's full name */
-	"Huy Vuong",
+	" Huy Vuong ",
 	/* First member's email address */
-	"hvuong3@unl.edu",
+	" hvuong3@unl.edu ",
 	/* Second member's full name (leave
 	* blank if none) */
 	"",
@@ -77,11 +77,13 @@ team_t team = {
 #define GET_ALLOC(p) (GET(p) & 0x1)
 
 /* Given block ptr bp, compute address of its header*/
-#define HDRP(bp)       ((char *)(bp) - WSIZE)  
+#define HDRP(bp)	((char *)(bp) - WSIZE)  
+/* BONUS : computer address of block pointer footer */
+#define FTRP(bp)	((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 
 /* Given block ptr bp, compute address of next block */
-#define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char*)(bp) - WSIZE)))
-
+#define NEXT_BLKP(bp)	((char *)(bp) + GET_SIZE(((char*)(bp) - WSIZE)))
+#define PREV_BLKP(bp)	((char *)(bp) - GET_SIZE(((char*)(bp) - DSIZE)))
 /* $end mallocmacros */
 
 
@@ -123,6 +125,7 @@ int mm_init(void)
 /* $begin mmmalloc */
 void *mm_malloc(size_t size) 
 {
+//    printf("Calling malloc...");
     size_t asize;      /* adjusted block size */
     size_t extendsize; /* amount to extend heap if no fit */
     char *bp;      
@@ -149,10 +152,10 @@ void *mm_malloc(size_t size)
     extendsize = MAX(asize,CHUNKSIZE);
 	 //printf("extendsize = %d\n", extendsize);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
-	 {
-	 	printf("mm_malloc = NULL\n");
-		return NULL;
-	 }
+    {
+ 	printf("mm_malloc = NULL\n");
+	return NULL;
+    }
 	 //printf("return address = %p\n", bp);
     place(bp, asize);
 	 //mm_checkheap(1);
@@ -166,23 +169,91 @@ void *mm_malloc(size_t size)
 /* $begin mmfree */
 void mm_free(void *bp)
 {
-	//printf("call mm_free\n");
+	// if the pointer is not exist, then there's nothing to free
+	if (!bp) 
+		return;
+	size_t size = GET_SIZE(HDRP(bp));
+	PUT(HDRP(bp), PACK(size, 1)); // free block header
+	PUT(FTRP(bp), PACK(size, 1)); // free block footer, avoid internal fragmentation
+	// Immediate coalescing : coelesce each time free is called
+	size_t head_alloc = GET_ALLOC(HDRP(PREV_BLKP(bp)));
+	size_t foot_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+	/* Case 1 : free block in between 2 allocated block */
+	if (head_alloc && foot_alloc) 
+	{
+	 
+			
+	}
+	/* Case 2 : free block in between allocated at front and freed block at end */
+	else if (head_alloc && !foot_alloc)
+	{
+		size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+		
+		PUT(HDRP(bp), PACK(size, 0));
+		PUT(FTRP(bp), PACK(size, 0));
 
-	/* You need to implement this function */
+	}
+	/* Case 3 : head alloc is freed and foot alloc is allocated */
+	else if (!head_alloc && foot_alloc) 
+	{
+
+	}
+	/* Case 4 : both end are freed */
+	else 
+	{
+
+	}
+
+
 }
 
 /* $end mmfree */
+
 
 /*
  * mm_realloc - naive implementation of mm_realloc
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-	if (ptr == NULL) {
-		mm_malloc(size);
+//	printf("Calling re-alloc...");
+	// If pointer does not exist, then it is a malloc
+	if (ptr == NULL) 
+	{
+		return mm_malloc(size);
 	}
+
+	// If the newly allocated size is 0, then it is a free
+	if (size <= 0)
+	{
+		free(ptr);
+	}
+
+	// define new pointer to return
+	size_t old_size = GET_SIZE(HDRP(ptr));
+	char *new_bp;
+	
+	size_t asize; /* Adjusted block size */
+	size_t extendsize; /* amount to extend heap if no fit */	
+	/* Adjust block size to include overhead and alignment reqs. */
+	asize = (size <= WSIZE) ? (WSIZE + OVERHEAD) : (DSIZE + ((size + (OVERHEAD) + (DSIZE - 1)) / DSIZE));
+
+	/* new size need more blocks */
+	if (asize > old_size)
+	{
+		extendsize = MAX(asize, CHUNKSIZE);
+		
+	}
+	else
+	{
+		/* if newly allocated space is smaller than old space, just use the old space */
+		place(ptr, asize);
+		// return old pointer since we don't need to rellocate it.
+		return ptr;
+	}
+	new_bp = mm_malloc(size);
+	free(ptr);
 	/* You need to implement this function. */
-	return NULL;
+	return new_bp;
 }
 
 /* 
@@ -240,17 +311,18 @@ static void *extend_heap(size_t words)
 static void place(void *bp, size_t asize)
 /* $end mmplace-proto */
 {
-    size_t csize = GET_SIZE(HDRP(bp));   
+	size_t csize = GET_SIZE(HDRP(bp));   
 	// printf("csize = %d\n", csize);
-
-   if ((csize - asize) >= (DSIZE)) { 
-	PUT(HDRP(bp), PACK(asize, 0));
-	bp = NEXT_BLKP(bp);
-	PUT(HDRP(bp), PACK(csize-asize, 1));
-    }
-    else { 
-	PUT(HDRP(bp), PACK(csize, 0));
-    }
+	if ((csize - asize) >= (DSIZE)) 
+	{ 
+		PUT(HDRP(bp), PACK(asize, 0));
+		bp = NEXT_BLKP(bp);
+		PUT(HDRP(bp), PACK(csize-asize, 1));
+	}
+	else 
+	{ 
+		PUT(HDRP(bp), PACK(csize, 0));
+	}
 }
 /* $end mmplace */
 
